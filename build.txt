@@ -1,0 +1,6 @@
+Setup:
+  $ . build/envsetup.sh
+  $ lunch ${ANDROID_TARGET:-aosp_arm-eng}
+
+Build:
+  $ make -j4
