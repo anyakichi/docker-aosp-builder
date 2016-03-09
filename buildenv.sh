@@ -6,101 +6,141 @@ set -o pipefail
 
 shopt -s nullglob
 
-: ${BUILDENV_CONF_DIR:=/usr/local/share/buildenv}
+
+if [[ -r /etc/buildenv.conf ]]; then
+    . /etc/buildenv.conf
+fi
+
+: ${ALIASES:=1}
+: ${DOTCMDS:=}
+: ${CONFDIR:=/etc/buildenv.d}
 
 
-list_scmd()
+list_scmds()
 {
     local conf
 
-    for conf in "${BUILDENV_CONF_DIR}"/*.txt; do
-        echo "$(basename ${conf} .txt)"
+    for conf in "${CONFDIR}"/*.conf; do
+        echo "$(basename ${conf} .conf)"
     done
+}
+
+dotcmd_p()
+{
+    local pat="\\<$1\\>"
+
+    [[ ${DOTCMDS} =~ ${pat} ]]
 }
 
 expand_vars()
 {
-    local file="${1:--}"
+    local input
 
-    printf "cat <<EOF\n$(sed 's/\\/\\\\\\\\/g' "${file}")\nEOF" | /bin/bash
+    [[ ${1+x} ]] && input="${1}" || input="$(cat -)"
+
+    cat <<-EOF_OUT | /bin/bash -u
+	cat <<EOF
+	$(echo "${input}" | sed -r 's/\\(\$)|(\\)/\\\1\2/g')
+	EOF
+	EOF_OUT
 }
 
-get_commands()
+select_commands()
 {
-    local file="${1:--}" options="${2:-0}" prefix="${3:-}"
+    local epat="${1:-\$}" input
 
-    if [[ ${options} -ne 0 ]]; then
-        cmd='/^\s*(\$|\?)\s+/{s//'${prefix}'/p}'
-    else
-        cmd='/^\s*\$\s+/{s//'${prefix}'/p}'
-    fi
+    [[ ${2+x} ]] && input="${2}" || input="$(cat -)"
 
-    sed -nr -e :a -e '/\\$/N; s/\\\n\s*//; ta' -e "${cmd}" "${file}"
+    cmd='/^\s*('${epat}')\s+/{s///p}'
+
+    echo "${input}" | sed -nr -e :a -e '/\\$/N; s/\s*\\\n\s*/ /; ta' -e "${cmd}"
 }
 
-do_commands()
+exec_commands()
 {
-    local scmd="${1:-dummy}" yes="${2:-0}" options="${3:-0}"
+    local input
 
-    if [[ ${yes} -eq 0 ]]; then
-        echo "$(echo ${scmd} | sed 's/^\(.\)/\U\1/') commands:"
-        echo
-        expand_vars "${BUILDENV_CONF}" | get_commands - ${options} '  $ '
-        echo
-        read -p "Continue? ($(basename "$0") -h for details) [Y/n] "
-        if [[ ! ${REPLY:-y} =~ ^([Yy][Ee][Ss]|[Yy])$ ]]; then
-            exit 0
-        fi
-    fi
+    [[ ${1+x} ]] && input="${1}" || input="$(cat -)"
 
-    expand_vars "${BUILDENV_CONF}" \
-      | get_commands - ${options} \
+    echo "${input}" \
       | awk '{ s=$0; gsub(/\\/, "\\\\"); gsub(/"/, "\\\"");
-               print "echo \"==> " $0 "\""; print s " || exit 1" }' \
+               print "echo \"==> " $0 "\" >&2"; print s " || exit 1" }' \
       | /bin/bash
+}
+
+ask_exec_commands()
+{
+    local scmd="${1:-dummy}" input="${2:-}"
+
+    echo "$(echo ${scmd} | sed 's/^\(.\)/\U\1/') commands:"
+    echo
+    echo "${input}" | sed 's/^/  $ /'
+    echo
+
+    read -p "Continue? ($(basename "$0") ${scmd} -h for details) [Y/n] "
+    if [[ ${REPLY:-y} =~ ^([Yy][Ee][Ss]|[Yy])$ ]]; then
+        exec_commands "${input}"
+    fi
 }
 
 usage()
 {
-    local status=${1:-1} msg=${2:-} expand=${3:-1}
-    local cmd=$(basename "$0") scmd
+    local status=${1:-1} scmd=${2:-}
+    local cmd=$(basename "$0")
 
-    if [[ ! ${msg} ]]; then
+    if [[ ! ${scmd} ]]; then
         echo "usage: ${cmd} init"
-        for scmd in $(list_scmd); do
+        for scmd in $(list_scmds); do
             echo "       ${cmd} ${scmd} [args]"
         done
     else
-        echo "usage: ${cmd} ${msg}"
-        echo
-        if [[ ${expand} -ne 0 ]]; then
-            grep -v '^\s*#' "${BUILDENV_CONF}" | expand_vars -
-        else
-            grep -v '^\s*#' "${BUILDENV_CONF}"
-        fi
+        case "${scmd}" in
+            extract)
+                echo "usage: ${cmd} ${scmd} [-Ddfhpxy]"
+                ;;
+            *)
+                echo "usage: ${cmd} ${scmd} [-Ddhpxy]"
+                ;;
+        esac
     fi
 
     exit ${status}
 }
 
+print_alias()
+{
+    local scmd="$1" type="${2:-}" pat="\\<${1}\\>"
+
+    if ([[ ${ALIASES} == 1 ]]) || \
+       ([[ ${ALIASES} == 2 ]] && ! type ${scmd} >/dev/null 2>&1) || \
+       ([[ ${ALIASES} =~ ${pat} ]]);
+    then
+        if [[ ${type} == "source" ]]; then
+            echo "alias ${scmd}='. <(${cmd} ${scmd})'"
+        else
+            echo "alias ${scmd}='${cmd} ${scmd}'"
+        fi
+    fi
+}
+
 main_init()
 {
-    local cmd=$(basename "$0")
+    local cmd=$(basename "$0") scmd
+    local -A sctypes
 
     if [[ $# -ne 0 ]]; then
-        echo "usage: ${cmd} init"
-        exit 1
+        usage 1
     fi
 
-    : ${BUILDENV_ALIAS:=1}
-
-    if [[ ${BUILDENV_ALIAS} -eq 0 ]]; then
-        exit 0
+    if [[ ${ALIASES} == 0 ]]; then
+        return 0
     fi
 
-    for scmd in $(list_scmd); do
-        if [[ ${BUILDENV_ALIAS} -eq 1 ]] || ! type ${scmd} >/dev/null 2>&1; then
-            echo "alias ${scmd}='${cmd} ${scmd}';"
+    for scmd in $(list_scmds); do
+        if dotcmd_p "${scmd}"; then
+            print_alias "${scmd}" "source"
+        else
+            print_alias "${scmd}" "default"
         fi
     done
 }
@@ -110,62 +150,41 @@ main_generic()
     local scmd=$1
     shift
 
-    local xflag=0 yflag=0
+    local force= epat='\$' pronly= yes=
+    local recipe="${CONFDIR}/${scmd}.conf"
 
-    usage="${scmd} [-Hhxy]"
-    while getopts "Hhxy" opt; do
-        case $opt in
-            H)
-                usage 0 "${usage}" 0
-                ;;
-            h)
-                usage 0 "${usage}"
-                ;;
-            x)
-                xflag=1
-                ;;
-            y)
-                yflag=1
-                ;;
-            \?)
-                usage 1 "${usage}"
-                ;;
-        esac
-    done
-
-    shift $((OPTIND - 1))
-
-    if [[ $# -ne 0 ]]; then
-        usage 1 "${usage}"
+    if dotcmd_p "${scmd}"; then
+        pronly=yes
     fi
 
-    do_commands "${scmd}" $yflag $xflag
-}
-
-main_extract()
-{
-    local fflag=0 xflag=0 yflag=0
-
-    usage="extract [-Hfhxy]"
-    while getopts "Hfhxy" opt; do
+    while getopts "Ddfhpxy" opt; do
         case $opt in
-            H)
-                usage 0 "${usage}" 0
+            D)
+                cat "${recipe}"
+                exit 0
+                ;;
+            d)
+                cat "${recipe}" | expand_vars
+                exit 0
                 ;;
             f)
-                fflag=1
+                [[ ${scmd} != extract ]] && usage 1 "${scmd}"
+                force=yes
                 ;;
             h)
-                usage 0 "${usage}"
+                usage 0 "${scmd}"
+                ;;
+            p)
+                pronly=yes
                 ;;
             x)
-                xflag=1
+                epat='\$|\?'
                 ;;
             y)
-                yflag=1
+                yes=yes
                 ;;
             \?)
-                usage 1 "${usage}"
+                usage 1 "${scmd}"
                 ;;
         esac
     done
@@ -173,18 +192,35 @@ main_extract()
     shift $((OPTIND - 1))
 
     if [[ $# -ne 0 ]]; then
-        usage 1 "${usage}"
+        usage 1 "${scmd}"
     fi
 
-    if [[ $fflag -eq 0 && -n "$(ls -A)" ]]; then
+    commands=$(cat "${recipe}" \
+                | expand_vars \
+                | select_commands "${epat}")
+
+    if [[ -z "${commands}" ]]; then
+        exit 0
+    fi
+
+    if [[ ${pronly} ]]; then
+        echo "${commands}"
+        exit 0
+    fi
+
+    if [[ ${scmd} == extract && -n "$(ls -A)" && ! ${force} ]]; then
         echo "Target directory is not empty."
         read -p "Continue? [y/N] "
-        if [[ ! $REPLY =~ ^([Yy][Ee][Ss]|[Yy])$ ]]; then
+        if [[ ! ${REPLY} =~ ^([Yy][Ee][Ss]|[Yy])$ ]]; then
             exit 0
         fi
     fi
 
-    do_commands extract $yflag $xflag
+    if [[ ${yes} ]]; then
+        exec_commands "${commands}"
+    else
+        ask_exec_commands build "${commands}"
+    fi
 }
 
 main()
@@ -193,10 +229,9 @@ main()
         usage 1
     fi
 
-    scmd=$1
-    : ${BUILDENV_CONF:=${BUILDENV_CONF_DIR}/${scmd}.txt}
+    local scmd="${1}" pat="\\<${1}\\>"
 
-    if [[ ${scmd} != init && ! -e ${BUILDENV_CONF} ]]; then
+    if [[ ${scmd} != init && ! $(list_scmds) =~ ${pat} ]]; then
         usage 1
     fi
 
