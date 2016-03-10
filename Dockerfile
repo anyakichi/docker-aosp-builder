@@ -11,7 +11,7 @@ RUN \
     flex \
     g++-multilib \
     gcc-multilib \
-    git-core \
+    git \
     gnupg \
     gperf \
     lib32ncurses5-dev \
@@ -36,7 +36,7 @@ RUN chmod 755 /usr/local/bin/repo
 RUN useradd -ms /bin/bash builder
 USER builder
 RUN \
-  echo 'eval $(buildenv init)' >> ~/.bashrc && \
+  echo '. <(buildenv init)' >> ~/.bashrc && \
   git config --global user.email "builder@aosp" && \
   git config --global user.name "AOSP Builder" && \
   git config --global color.ui auto
@@ -47,15 +47,17 @@ WORKDIR /home/builder
 ENV \
   ANDROID_BRANCH="" \
   ANDROID_MIRROR="" \
-  ANDROID_TARGET="" \
+  ANDROID_TARGET="aosp_arm-eng" \
   REPO_INIT_OPTS="-q" \
   REPO_SYNC_OPTS="-q"
 
 COPY buildenv/entrypoint.sh /usr/local/sbin/entrypoint
 COPY buildenv/buildenv.sh /usr/local/bin/buildenv
 
-COPY build.txt /usr/local/share/buildenv/
-COPY extract.txt /usr/local/share/buildenv/
+COPY buildenv/buildenv.conf /etc/
+COPY buildenv.d/ /etc/buildenv.d/
+
+RUN sed -i 's/^#DOTCMDS=.*/DOTCMDS=setup/' /etc/buildenv.conf
 
 ENTRYPOINT ["/usr/local/sbin/entrypoint"]
 CMD ["/bin/bash"]

@@ -1,5 +1,0 @@
-Get Android source:
-  $ repo init \
-      -u ${ANDROID_MIRROR:-https://android.googlesource.com/platform/manifest} \
-      -b ${ANDROID_BRANCH:-master} ${REPO_INIT_OPTS:-}
-  $ repo sync ${REPO_SYNC_OPTS:-}
