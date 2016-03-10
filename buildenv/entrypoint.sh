@@ -3,8 +3,6 @@
 set -o nounset
 set -o pipefail
 
-export WORKDIR=$(pwd)
-
 : ${BUILD_USER:=builder}
 : ${BUILD_GROUP:=builder}
 
