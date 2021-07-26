@@ -11,17 +11,27 @@ if [[ -r /etc/buildenv.conf ]]; then
     . /etc/buildenv.conf
 fi
 
-: ${ALIASES:=1}
-: ${DOTCMDS:=}
-: ${CONFDIR:=/etc/buildenv.d}
+ALIASES=${ALIASES:=1}
+DOTCMDS=${DOTCMDS:=}
+CONFDIR=${CONFDIR:=/etc/buildenv.d}
 
 
 list_scmds()
 {
-    local conf
+    ls "${CONFDIR}" | sed 's/\..*$//' | sort -u
+}
 
-    for conf in "${CONFDIR}"/*.conf; do
-        echo "$(basename ${conf} .conf)"
+get_content_of_scmd()
+{
+    local file newline=""
+
+    for file in "${CONFDIR}/${1}".*; do
+        if [[ -n "${newline}" ]]; then
+            echo
+        else
+            newline="\n"
+        fi
+        cat "${file}"
     done
 }
 
@@ -36,11 +46,11 @@ expand_vars()
 {
     local input
 
-    [[ ${1+x} ]] && input="${1}" || input="$(cat -)"
+    input="$(cat -)"
 
     cat <<-EOF_OUT | /bin/bash -u
 	cat <<EOF
-	$(echo "${input}" | sed -r 's/\\(\$)|(\\)/\\\1\2/g')
+	$(echo "${input}" | sed -r 's/\\(\$)|(\\|`)/\\\1\2/g')
 	EOF
 	EOF_OUT
 }
@@ -62,22 +72,21 @@ exec_commands()
 
     [[ ${1+x} ]] && input="${1}" || input="$(cat -)"
 
-    echo "${input}" \
+    /bin/bash <(echo "${input}" \
       | awk '{ s=$0; gsub(/\\/, "\\\\"); gsub(/"/, "\\\"");
-               print "echo \"==> " $0 "\" >&2"; print s " || exit 1" }' \
-      | /bin/bash
+               print "echo \"==> " $0 "\" >&2"; print s " || exit 1" }')
 }
 
 ask_exec_commands()
 {
     local scmd="${1:-dummy}" input="${2:-}"
 
-    echo "$(echo ${scmd} | sed 's/^\(.\)/\U\1/') commands:"
+    echo "${scmd^} commands:"
     echo
     echo "${input}" | sed 's/^/  $ /'
     echo
 
-    read -p "Continue? ($(basename "$0") ${scmd} -h for details) [Y/n] "
+    read -rp "Continue? ($(basename "$0") ${scmd} -h for details) [Y/n] "
     if [[ ${REPLY:-y} =~ ^([Yy][Ee][Ss]|[Yy])$ ]]; then
         exec_commands "${input}"
     fi
@@ -86,7 +95,9 @@ ask_exec_commands()
 usage()
 {
     local status=${1:-1} scmd=${2:-}
-    local cmd=$(basename "$0")
+    local cmd
+
+    cmd="$(basename "$0")"
 
     if [[ ! ${scmd} ]]; then
         echo "usage: ${cmd} init"
@@ -104,16 +115,16 @@ usage()
         esac
     fi
 
-    exit ${status}
+    exit "${status}"
 }
 
 print_alias()
 {
     local scmd="$1" type="${2:-}" pat="\\<${1}\\>"
 
-    if ([[ ${ALIASES} == 1 ]]) || \
-       ([[ ${ALIASES} == 2 ]] && ! type ${scmd} >/dev/null 2>&1) || \
-       ([[ ${ALIASES} =~ ${pat} ]]);
+    if [[ ${ALIASES} == 1 ]] || \
+       ([[ ${ALIASES} == 2 ]] && ! type "${scmd}" >/dev/null 2>&1) || \
+       [[ ${ALIASES} =~ ${pat} ]];
     then
         if [[ ${type} == "source" ]]; then
             echo "alias ${scmd}='. <(${cmd} ${scmd})'"
@@ -125,8 +136,9 @@ print_alias()
 
 main_init()
 {
-    local cmd=$(basename "$0") scmd
-    local -A sctypes
+    local cmd scmd
+
+    cmd="$(basename "$0")"
 
     if [[ $# -ne 0 ]]; then
         usage 1
@@ -150,8 +162,7 @@ main_generic()
     local scmd=$1
     shift
 
-    local force= epat='\$' pronly= yes=
-    local recipe="${CONFDIR}/${scmd}.conf"
+    local force='' epat='\$' pronly='' yes=''
 
     if dotcmd_p "${scmd}"; then
         pronly=yes
@@ -160,11 +171,11 @@ main_generic()
     while getopts "Ddfhpxy" opt; do
         case $opt in
             D)
-                cat "${recipe}"
+                get_content_of_scmd "${scmd}"
                 exit 0
                 ;;
             d)
-                cat "${recipe}" | expand_vars
+                get_content_of_scmd "${scmd}" | expand_vars
                 exit 0
                 ;;
             f)
@@ -195,7 +206,7 @@ main_generic()
         usage 1 "${scmd}"
     fi
 
-    commands=$(cat "${recipe}" \
+    commands=$(get_content_of_scmd "${scmd}" \
                 | expand_vars \
                 | select_commands "${epat}")
 
@@ -210,7 +221,7 @@ main_generic()
 
     if [[ ${scmd} == extract && -n "$(ls -A)" && ! ${force} ]]; then
         echo "Target directory is not empty."
-        read -p "Continue? [y/N] "
+        read -rp "Continue? [y/N] "
         if [[ ! ${REPLY} =~ ^([Yy][Ee][Ss]|[Yy])$ ]]; then
             exit 0
         fi
@@ -219,7 +230,7 @@ main_generic()
     if [[ ${yes} ]]; then
         exec_commands "${commands}"
     else
-        ask_exec_commands build "${commands}"
+        ask_exec_commands "${scmd}" "${commands}"
     fi
 }
 

@@ -3,19 +3,19 @@
 set -o nounset
 set -o pipefail
 
-: ${BUILD_USER:=builder}
-: ${BUILD_GROUP:=builder}
+BUILD_USER="${BUILD_USER:=builder}"
+BUILD_GROUP="${BUILD_GROUP:=builder}"
 
 uid=$(stat -c "%u" .)
 gid=$(stat -c "%g" .)
 
-if [ $uid -ne 0 ]; then
-    if [ $(id -g ${BUILD_GROUP}) -ne ${gid} ]; then
-        getent group ${gid} >/dev/null 2>&1 || groupmod -g ${gid} ${BUILD_GROUP}
-        chgrp -R ${gid} /home/${BUILD_USER}
+if [ "$uid" -ne 0 ]; then
+    if [ "$(id -g ${BUILD_GROUP})" -ne "${gid}" ]; then
+        getent group "${gid}" >/dev/null 2>&1 || groupmod -g "${gid}" "${BUILD_GROUP}"
+        chgrp -R "${gid}" "/home/${BUILD_USER}"
     fi
-    if [ $(id -u ${BUILD_USER}) -ne ${uid} ]; then
-        usermod -u ${uid} ${BUILD_USER}
+    if [ "$(id -u ${BUILD_USER})" -ne "${uid}" ]; then
+        usermod -u "${uid}" "${BUILD_USER}"
     fi
 fi
 
