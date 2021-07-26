@@ -7,7 +7,7 @@ Android Open Source Project.
 
 ```
 $ mkdir aosp-1 && cd $_
-$ din anyakichi/aosp-builder:main
+$ din anyakichi/aosp-builder:bionic
 builder@aosp-1:/build$ extract
 builder@aosp-1:/build$ setup
 builder@aosp-1:/build$ build
