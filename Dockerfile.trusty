@@ -52,13 +52,16 @@ RUN \
 ADD https://storage.googleapis.com/git-repo-downloads/repo /usr/local/bin/
 RUN chmod 755 /usr/local/bin/repo
 
-RUN useradd -ms /bin/bash builder
+RUN \
+  useradd -ms /bin/bash builder \
+  && echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
 USER builder
 RUN \
-  echo '. <(buildenv init)' >> ~/.bashrc && \
-  git config --global user.email "builder@aosp" && \
-  git config --global user.name "AOSP Builder" && \
-  git config --global color.ui auto
+  echo '. <(buildenv init)' >> ~/.bashrc \
+  && git config --global user.email "builder@aosp" \
+  && git config --global user.name "AOSP Builder" \
+  && git config --global color.ui auto
 
 USER root
 WORKDIR /home/builder
