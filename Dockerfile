@@ -1,9 +1,10 @@
 FROM ubuntu:14.04
-MAINTAINER INAJIMA Daisuke <inajima@sopht.jp>
 
+# https://source.android.com/setup/build/initializing
+# https://android.googlesource.com/platform/build/+/master/tools/docker/Dockerfile
 RUN \
-  apt-get update && \
-  DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  apt-get update \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     bison \
     build-essential \
     ccache \
@@ -21,22 +22,28 @@ RUN \
     libx11-dev \
     libxml2-utils \
     openjdk-7-jdk \
+    python \
     sudo \
     unzip \
     x11proto-core-dev \
     xsltproc \
     zip \
     zlib1g-dev \
-    && \
-  rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/*
 
-ADD https://github.com/tianon/gosu/releases/download/1.10/gosu-amd64 \
-      /usr/local/bin/gosu
-ADD https://github.com/tianon/gosu/releases/download/1.10/gosu-amd64.asc \
-      /usr/local/bin/gosu.asc
 RUN \
+  GOSU_VERSION=1.13 && \
+  GOSU_ARCH=amd64 && \
+  curl -LsS -o /usr/local/bin/gosu "https://github.com/tianon/gosu/releases/download/${GOSU_VERSION}/gosu-${GOSU_ARCH}" && \
+  curl -LsS -o /usr/local/bin/gosu.asc "https://github.com/tianon/gosu/releases/download/${GOSU_VERSION}/gosu-${GOSU_ARCH}.asc" && \
   export GNUPGHOME="$(mktemp -d)" && \
-  gpg --keyserver ha.pool.sks-keyservers.net --recv-keys B42F6819007F00F88E364FD4036A9C25BF357DD4 && \
+  for server in $(shuf -e ha.pool.sks-keyservers.net \
+                          hkp://p80.pool.sks-keyservers.net:80 \
+                          keyserver.ubuntu.com \
+                          hkp://keyserver.ubuntu.com:80 \
+                          pgp.mit.edu) ; do \
+        gpg --batch --keyserver "$server" --recv-keys B42F6819007F00F88E364FD4036A9C25BF357DD4 && break || : ; \
+    done && \
   gpg --batch --verify /usr/local/bin/gosu.asc /usr/local/bin/gosu && \
   rm -r "$GNUPGHOME" /usr/local/bin/gosu.asc && \
   chmod +x /usr/local/bin/gosu && \
