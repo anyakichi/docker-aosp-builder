@@ -56,7 +56,7 @@ ENV \
   REPO_INIT_OPTS="-q" \
   REPO_SYNC_OPTS="-q"
 
-COPY buildenv/entrypoint.sh /usr/local/sbin/entrypoint
+COPY buildenv/entrypoint.sh /buildenv-entrypoint.sh
 COPY buildenv/buildenv.sh /usr/local/bin/buildenv
 
 COPY buildenv/buildenv.conf /etc/
@@ -64,5 +64,5 @@ COPY buildenv.d/ /etc/buildenv.d/
 
 RUN sed -i 's/^#DOTCMDS=.*/DOTCMDS=setup/' /etc/buildenv.conf
 
-ENTRYPOINT ["/usr/local/sbin/entrypoint"]
+ENTRYPOINT ["/buildenv-entrypoint.sh"]
 CMD ["/bin/bash"]
